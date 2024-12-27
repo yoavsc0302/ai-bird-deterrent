@@ -1,74 +1,121 @@
-# AI Bird Deterrent System
+# AI Bird Deterrent Project
 
-A computer vision system that uses YOLOv8 and DeepSort to detect and track people using a Raspberry Pi camera. This system is designed to be part of a bird deterrent solution.
+This project utilizes the Hailo-8L AI accelerator on a Raspberry Pi 5 to perform person detection and tracking.
 
 ## Hardware Requirements
-- Raspberry Pi (tested on Raspberry Pi 4)
-- Raspberry Pi Camera Module
 
-## Installation
+- Raspberry Pi 5
+- Hailo-8L AI Accelerator
+- Raspberry Pi Camera Module 3
 
-1. Clone the repository:
+## Directory Structure
+
+```
+ai-bird-deterrent/
+├── basic_pipelines/     # Core detection code
+├── logs/               # Log files
+├── resources/          # AI models and libraries
+├── scripts/           # Setup and utility scripts
+└── README.md
+```
+
+## Initial Setup
+
+### 1. Environment Setup
+
+First, you need to activate the Hailo virtual environment. This is crucial for all operations:
+
 ```bash
-git clone https://github.com/yourusername/ai-bird-deterrent.git
-cd ai-bird-deterrent
+source scripts/setup_env.sh
 ```
 
-2. Create and activate virtual environment:
+You should see `(venv_hailo_rpi5_examples)` in your terminal prompt after activation. All subsequent commands must be run with this environment active.
+
+### 2. Installation
+
+Run the installation script to set up dependencies:
+
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
+./scripts/install.sh
 ```
 
-3. Install requirements:
+This script will:
+- Install required Python packages
+- Install system dependencies
+- Download necessary model files
+
+### 3. Download Resources
+
+The installation script should handle this automatically, but if you need to download resources manually:
+
 ```bash
-pip install -r requirements.txt
+./scripts/download_resources.sh
 ```
 
-4. Download YOLOv8 model:
-The `yolov8n.pt` model should be placed in the `models/` directory.
+This downloads:
+- YOLOv8s model for Hailo-8L
+- YOLOv8s pose estimation model
+- Required post-processing libraries
 
-## Project Structure
-```
-AI-BIRDDETERENT/
-│
-├── models/
-│   └── yolov8n.pt
-├── scripts/
-│   └── person_tracking.py
-├── venv/
-├── .gitignore
-├── README.md
-└── requirements.txt
-```
+### 4. Post-Processing Setup (If Needed)
 
-## Usage
+The post-processing library is essential for converting raw model output into meaningful detections. If you need to compile it:
 
-1. Activate the virtual environment:
 ```bash
-source venv/bin/activate  # On Windows use: venv\Scripts\activate
+./scripts/compile_postprocess.sh
 ```
 
-2. Run the person tracking script:
+Note: This is typically only needed during initial setup or if you modify the post-processing code.
+
+## Running the Application
+
+1. Make sure the environment is activated:
 ```bash
-python scripts/person_tracking.py
+source scripts/setup_env.sh
 ```
 
-3. Press 'q' to quit the application.
+2. Run the detection application:
+```bash
+python basic_pipelines/detection.py
+```
 
-## Features
-- Real-time person detection using YOLOv8
-- Person tracking with DeepSort algorithm
-- Visual display of tracking results with bounding boxes and ID numbers
+The application will:
+- Initialize the Raspberry Pi camera
+- Load the YOLOv8s model
+- Start detecting people in real-time
+- Display the video feed with detections
+
+## Models
+
+The project includes these key models:
+- `yolov8s_h8l.hef`: Main detection model
+- `yolov8s_pose_h8l.hef`: Pose estimation model (for future tracking features)
 
 ## Troubleshooting
-If you encounter any camera-related issues:
-1. Ensure the Raspberry Pi camera is properly connected
-2. Enable the camera interface using `raspi-config`
-3. Verify camera permissions
 
-## License
-[Your chosen license]
+1. If you see "No such file" errors:
+   - Ensure you've run the download_resources.sh script
+   - Check that all files exist in the resources/ directory
 
-## Contributing
-[Your contribution guidelines]
+2. If you get Hailo-related errors:
+   - Make sure the environment is activated
+   - Verify the Hailo-8L is properly connected
+   - Check the logs/ directory for detailed error messages
+
+3. If the camera isn't working:
+   - Ensure the camera module is properly connected
+   - Check that the camera is enabled in raspi-config
+
+## Important Notes
+
+1. Always run scripts from the project root directory
+2. Keep the virtual environment activated during all operations
+3. Check the logs directory for troubleshooting information
+4. The post-processing library compilation (compile_postprocess.sh) is usually only needed once during initial setup
+
+## Future Features
+
+The project is designed to support:
+- Person tracking with unique IDs
+- Movement analysis
+- Pose estimation

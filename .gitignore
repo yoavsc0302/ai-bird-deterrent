@@ -1,32 +1,43 @@
 # Python virtual environment
+venv_hailo_rpi5_examples/
+.env/
+.venv/
+env/
 venv/
-ENV/
 
-# Python bytecode
+# Python cache files
 __pycache__/
 *.py[cod]
 *$py.class
+.Python
+*.so
 
-# Distribution/packaging
+# Build directories
+build*/
+build.*/
 dist/
-build/
 *.egg-info/
 
-# IDEs and editors
+# Log files
+logs/
+*.log
+hailort.log
+
+# IDE specific files
 .idea/
 .vscode/
 *.swp
 *.swo
+.project
+.pydevproject
+
+# OS specific files
 .DS_Store
-
-# Logs and databases
-*.log
-*.sqlite
-
-# Local development settings
-.env
-.env.local
-
-# Temporary files
+Thumbs.db
+*.bak
 *.tmp
-temp/
+*~
+
+# Project specific
+resources/*.hef         # Model files
+resources/*.json       # Configuration files
