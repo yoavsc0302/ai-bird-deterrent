@@ -1,7 +1,7 @@
-numpy<2.0.0
+numpy==1.23.3
 setproctitle
 opencv-python
 
-# Core Hailo requirements
-hailo-platform-api>=4.16.0
-hailo-tappas>=3.29.0
+# Servo control requirements
+adafruit-circuitpython-pca9685
+adafruit-circuitpython-motor

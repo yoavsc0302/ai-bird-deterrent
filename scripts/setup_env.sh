@@ -80,6 +80,16 @@ if is_sourced; then
                 source "$SCRIPT_DIR/$VENV_NAME/bin/activate"
             fi
         fi
+
+        # Install requirements.txt
+        REQUIREMENTS_FILE="$SCRIPT_DIR/../requirements.txt"
+        if [ -f "$REQUIREMENTS_FILE" ]; then
+            echo "Installing requirements from $REQUIREMENTS_FILE..."
+            pip install -r "$REQUIREMENTS_FILE"
+        else
+            echo "requirements.txt not found in the parent directory of $SCRIPT_DIR."
+        fi
+
         TAPPAS_POST_PROC_DIR=$(pkg-config --variable=tappas_postproc_lib_dir hailo-tappas-core)
     else
         if [[ "$VENV_NAME" == "DOCKER" ]]; then
