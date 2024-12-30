@@ -41,3 +41,13 @@ Thumbs.db
 # Project specific
 resources/*.hef         # Model files
 resources/*.json       # Configuration files
+
+# Profiling data
+gstshark_*/
+
+# Python bytecode
+*.pyc
+
+# Temporary directories
+__pycache__/
+src/__pycache__/
