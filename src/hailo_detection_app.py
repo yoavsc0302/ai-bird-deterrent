@@ -24,6 +24,17 @@ from .hailo_rpi_common import (
     app_callback_class,
 )
 
+# Create logs directory if it doesn't exist
+logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
+os.makedirs(logs_dir, exist_ok=True)
+
+# Configure logging to write to logs/hailort.log
+logging.basicConfig(
+    filename=os.path.join(logs_dir, 'hailort.log'),
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
 class PersonDetectionApp(GStreamerApp):
     def __init__(self):
         Gst.init(None)
