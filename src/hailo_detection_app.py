@@ -1,238 +1,214 @@
-# src/hailo_detection_app.py
+"""
+Main Person Detection Application
+
+This module implements the core person detection and tracking functionality using
+Hailo's ML acceleration and hardware control for the bird deterrent system.
+"""
 
 import gi
 gi.require_version('Gst', '1.0')
 from gi.repository import Gst, GLib
 
-import argparse
 import os
 import hailo
-import numpy as np
 import logging
 import traceback
-import gpiod  # Replace RPi.GPIO with gpiod
+from typing import Optional, Tuple
 
-# Import from our local package
+from .config import load_config
 from .servo_control import PanTiltController
 from .person_tracker import PersonTracker
+from .laser_control import LaserController
 from .hailo_rpi_common import (
     GStreamerApp,
-    SOURCE_PIPELINE,
-    INFERENCE_PIPELINE,
-    USER_CALLBACK_PIPELINE,
-    DISPLAY_PIPELINE,
+    SOURCE_PIPELINE, # Gets frames (video) from Raspberry Pi camera
+    INFERENCE_PIPELINE, # Runs MLmodel inference on frames using Hailo
+    USER_CALLBACK_PIPELINE, # Where we process the inference results
+    DISPLAY_PIPELINE, # Displays the video with bounding boxes
     app_callback_class,
 )
 
-# Create logs directory if it doesn't exist
-logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'logs')
-os.makedirs(logs_dir, exist_ok=True)
-
-# Configure logging to write to logs/hailort.log
-logging.basicConfig(
-    filename=os.path.join(logs_dir, 'hailort.log'),
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
-
 class PersonDetectionApp(GStreamerApp):
-    def __init__(self):
-        Gst.init(None)
+    """
+    Main application class for person detection and tracking.
+    
+    This class integrates:
+    - Video capture and ML inference using Hailo
+    - Person tracking
+    - Servo control for pan/tilt
+    - Laser control
+    """
+    
+    def __init__(self, config_path: str = "config.yaml"):
+        """
+        Initialize the person detection application.
+        
+        Args:
+            config_path (str): Path to the YAML configuration file
+        """
 
-        # Paths to resources
-        current_dir = os.path.dirname(os.path.abspath(__file__))  # src/
-        project_dir = os.path.dirname(current_dir)                # ai-bird-deterrent/
-        resources_dir = os.path.join(project_dir, 'resources')    # ai-bird-deterrent/resources/
+        # 1. Load configuration & setup logs
+        self.config = load_config(config_path)
+        self._setup_logging()
 
-        hef_path = os.path.join(resources_dir, 'yolov8s_h8l.hef')
-        post_process_so = os.path.join(resources_dir, 'libyolo_hailortpp_postprocess.so')
+        # 2. Setup args for parent class
+        args = self._create_gstreamer_args()
+        super().__init__(args, app_callback_class())
 
-        if not os.path.exists(hef_path):
-            raise FileNotFoundError(f"HEF file not found: {hef_path}")
-        if not os.path.exists(post_process_so):
-            raise FileNotFoundError(f"Post-process SO not found: {post_process_so}")
+        # 3. Initialize hardware components
+        self._init_hardware()
 
-        args = argparse.Namespace(
-            input="rpi",
+        # 4. Setup detection callback (which is called for each frame)
+        self.app_callback = self._detection_callback
+
+        # 5. Create the GStreamer pipeline
+        self.create_pipeline() # uses get_pipeline_string() which we created here below, to create the pipeline
+        
+    def _setup_logging(self):
+        """Configure logging for the application.
+            1. Creates logs directory if it doesn't exist
+            2. Sets up logging into 'hailort.log'
+        """
+        logs_dir = self.config['paths'].get('logs_dir', 'logs')
+        os.makedirs(logs_dir, exist_ok=True)
+        
+        logging.basicConfig(
+            filename=os.path.join(logs_dir, 'hailort.log'),
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s'
+        )
+    
+    def _create_gstreamer_args(self):
+        """Create arguments for GStreamer initialization."""
+        from argparse import Namespace
+        return Namespace(
+            input="rpi", # we are using raspbery pi camera
             use_frame=False,
             show_fps=True,
-            arch="hailo8l",
-            hef_path=hef_path,
+            arch="hailo8l", # we are using hailo8l chip (not hailo8)
+            hef_path=self.config['paths']['model']['hef_path'], # our hef model suited for hailo8l chip
             disable_sync=True,
             dump_dot=False
         )
-
-        super().__init__(args, app_callback_class())
-
-        self.hef_path = hef_path
-        self.post_process_so = post_process_so
-
-        # Initialize tracker + servo
-        print("Initializing person tracker...")
-        self.tracker = PersonTracker()
-
-        print("Initializing pan/tilt servos...")
-        self.pan_tilt = PanTiltController()
-
-        # Setup laser using gpiod
-        print("Initializing laser...")
-        self.LASER_PIN = 13
-        self.GPIO_CHIP = "gpiochip0"
-        print(f"LASER_PIN set to {self.LASER_PIN}")
+    
+    def _init_hardware(self):
         try:
-            # Initialize gpiod chip and line
-            self.chip = gpiod.Chip(self.GPIO_CHIP)
-            self.laser_line = self.chip.get_line(self.LASER_PIN)
-            # Request the line as output
-            self.laser_line.request(consumer="person_detection", type=gpiod.LINE_REQ_DIR_OUT)
-            # Ensure laser starts OFF
-            self.laser_line.set_value(0)
-            print("GPIO setup for laser complete.")
+            logging.info("Initializing hardware components...")
+            
+            # Initialize person tracker
+            logging.info("Initializing person tracker...")
+            self.tracker = PersonTracker(max_frames_missing=self.config['detection']['person_tracking']['max_frames_missing'])
+
+            # Initialize pan/tilt servos
+            logging.info("Initializing pan/tilt servos...")
+            self.pan_tilt = PanTiltController(config=self.config)
+
+            # Initialize laser
+            logging.info("Initializing laser...")
+            self.laser = LaserController(config=self.config['laser'])
+
+            logging.info("All hardware components initialized successfully")
+
         except Exception as e:
-            print(f"Error during GPIO setup: {e}")
-            print("Try running the script with appropriate permissions.")
-
-        # Setup detection callback
-        self.app_callback = self.detection_callback
-
-        # Create the pipeline
-        self.create_pipeline()
-
-    def get_pipeline_string(self):
-        # Additional hailonet params
-        inference_params = (
-            "nms-score-threshold=0.3 "
-            "nms-iou-threshold=0.45 "
-            "output-format-type=HAILO_FORMAT_TYPE_FLOAT32"
-        )
-
-        # Build pipeline
-        pipeline = (
-            f"{SOURCE_PIPELINE('rpi')} "
-            f"{INFERENCE_PIPELINE(self.hef_path, self.post_process_so, batch_size=1, additional_params=inference_params)} ! "
-            f"{USER_CALLBACK_PIPELINE()} ! "
-            f"{DISPLAY_PIPELINE(video_sink='xvimagesink', sync='false', show_fps='true')}"
-        )
-        return pipeline
-
-    def detection_callback(self, pad, info, user_data):
+            logging.error(f"Failed to initialize hardware: {e}")
+            self.cleanup()
+            raise
+    
+    def _detection_callback(self, pad, info, user_data) -> Gst.PadProbeReturn:
+        """Process detection results and control hardware."""
         try:
+            
+            """
+            info - is a GStreamer probe info object that contains:
+            - The current buffer (frame) being processed
+            - more information about the buffer
+
+            buffer - is the frame itself, but also contains:
+            - The image data
+            - The ML model inference results
+            - The bounding boxes around detected objects
+            - The labels of the detected objects
+            - The confidence scores of the detected objects
+            - And more
+            """
+
+            
+            # Get buffer (frame) from probe info
             buffer = info.get_buffer()
-            if not buffer:
-                logging.warning("No buffer received.")
+            if not buffer: 
+                logging.warning("No buffer received in detection callback")
                 return Gst.PadProbeReturn.OK
-
-            # Retrieve caps from pad
-            caps = pad.get_current_caps()
-            if not caps:
-                logging.warning("No caps available.")
-                return Gst.PadProbeReturn.OK
-
-            structure = caps.get_structure(0)
-            frame_w = structure.get_value('width')
-            frame_h = structure.get_value('height')
-
-            rois = hailo.get_roi_from_buffer(buffer)
-            all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
-
-            if not all_detections:
-                logging.info("No detections found.")
-                self.laser_line.set_value(0)  # Turn laser off using gpiod
-                return Gst.PadProbeReturn.OK
-
-            # Filter only 'person' detections
-            person_detections = []
+            
+            # Get all detections (This will include all detected objects, not just people)
+            rois = hailo.get_roi_from_buffer(buffer) # ROI = Region of Interest, is a bounding box around detected object
+            all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION) # Get all detections from the ROI, Hailo detection is a class that represents a detected object
+            
+            # Remove non-person detections from ROIs so they won't be displayed
             for det in all_detections:
-                label = det.get_label()
-                if label == "person":
-                    person_detections.append(det)
-                else:
+                if det.get_label() != "person":
                     rois.remove_object(det)
-
+            
+            # Get remaining person detections (after removing non-person detections)
+            person_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
+            
+            # Handle no detections
             if not person_detections:
-                logging.info("No person detections after filtering.")
-                self.laser_line.set_value(0)  # Turn laser off using gpiod
+                self.laser.turn_off()
                 return Gst.PadProbeReturn.OK
-
-            # If we found a person, turn on laser
-            try:
-                # Turn laser on using gpiod
-                self.laser_line.set_value(1)
-                print("Laser turned ON.")
-
-            except Exception as e:
-                logging.error(f"Error controlling laser: {e}")
-                traceback.print_exc()
-
-            # Rest of the detection callback remains the same...
-            self.tracker.update(person_detections)
-
-            # Find the largest detection
-            largest_det = None
-            largest_area = 0.0
-            for det in person_detections:
-                bbox = det.get_bbox()
-                w, h = bbox.width(), bbox.height()
-                area = w * h
-                if area > largest_area:
-                    largest_area = area
-                    largest_det = det
-
-            # Move servo if found one
-            if largest_det:
-                bbox = largest_det.get_bbox()
-                x_min, y_min = bbox.xmin(), bbox.ymin()
-                x_max, y_max = bbox.xmax(), bbox.ymax()
-
-                center_x = (x_min + x_max) / 2.0
-                center_y = (y_min + y_max) / 2.0
-                logging.info(f"Largest person center: ({center_x:.2f}, {center_y:.2f})")
-
-                # Calculate angles using FOV-aware mapping
-                H_FOV = 63.0  # Raspberry Pi Camera Module 3 horizontal FOV
-                V_FOV = 48.8  # Raspberry Pi Camera Module 3 vertical FOV
-
-                # Convert normalized coordinates [-0.5, 0.5] to angles
-                normalized_x = center_x - 0.5
-                normalized_y = center_y - 0.5
-
-                # Apply tangent-based mapping for more accurate angle calculation
-                raw_pan_angle = -normalized_x * H_FOV
-                raw_tilt_angle = normalized_y * V_FOV
-
-                # Apply smoothing factor to reduce overshooting
-                SMOOTHING = 0.5  # More aggressive smoothing to reduce overshooting
-                pan_angle = raw_pan_angle * SMOOTHING
-                tilt_angle = raw_tilt_angle * SMOOTHING
-
-                logging.info(f"Calculated angles - Pan: {pan_angle:.2f}°, Tilt: {tilt_angle:.2f}°")
-
-                # Define a threshold for movement to prevent jitter
-                PAN_THRESHOLD = 5.0  # degrees
-                TILT_THRESHOLD = 5.0  # degrees
-
-                # Calculate differences
-                delta_pan = pan_angle - self.pan_tilt.current_pan
-                delta_tilt = tilt_angle - self.pan_tilt.current_tilt
-
-                if abs(delta_pan) >= PAN_THRESHOLD or abs(delta_tilt) >= TILT_THRESHOLD:
-                    self.pan_tilt.move(pan_angle, tilt_angle)
-                else:
-                    logging.info("Change in angles below threshold; not moving servos.")
-
+            
+            # Update tracker and get selected person
+            selected_person = self.tracker.update(person_detections)
+            if not selected_person:
+                self.laser.turn_off()
+                return Gst.PadProbeReturn.OK
+            
+            # Calculate target position
+            center_x, center_y = self.target_position(selected_person)
+            
+            # Turn on laser for tracking
+            self.laser.turn_on()
+            
+            # Update servo position if needed
+            self.pan_tilt.update_if_needed(center_x, center_y)
+            
             return Gst.PadProbeReturn.OK
-
+            
         except Exception as e:
             logging.error(f"Error in detection callback: {e}")
             traceback.print_exc()
             return Gst.PadProbeReturn.OK
-
+    
+    def get_pipeline_string(self) -> str:
+        """Create the GStreamer pipeline string."""
+        # Configure inference parameters
+        inference_params = (
+            f"nms-score-threshold={self.config['detection']['nms_score_threshold']} "
+            f"nms-iou-threshold={self.config['detection']['nms_iou_threshold']} "
+            "output-format-type=HAILO_FORMAT_TYPE_FLOAT32"
+        )
+        
+        # Build pipeline
+        pipeline = (
+            f"{SOURCE_PIPELINE('rpi')} " # The source of the video (in this case, the Raspberry Pi camera)
+            f"{INFERENCE_PIPELINE(self.config['paths']['model']['hef_path'], self.config['paths']['model']['post_process_path'], batch_size=1, additional_params=inference_params)} ! " # Runs on the frame the ML model inference (in this case, the Hailo model yolov8s_h8l.hef)
+            f"{USER_CALLBACK_PIPELINE()} ! " # Where we process the inference results
+            f"{DISPLAY_PIPELINE(video_sink='xvimagesink', sync='false', show_fps='true')}" # Displays the video with bounding boxes
+        )
+        return pipeline
+    
     def cleanup(self):
-        print("Cleaning up... Deinitializing servo and laser.")
+        """Clean up hardware resources."""
+        logging.info("Cleaning up hardware resources...")
         try:
-            self.laser_line.set_value(0)  # Ensure laser is OFF
-            self.laser_line.release()  # Release the GPIO line
-            print("Laser cleanup complete.")
+            self.laser.cleanup()
+            self.pan_tilt.cleanup()
+            logging.info("Hardware cleanup completed successfully")
         except Exception as e:
-            print(f"Error during laser cleanup: {e}")
-        self.pan_tilt.cleanup()
+            logging.error(f"Error during cleanup: {e}")
+
+    def target_position(self, selected_person):
+        """Calculate target position for the selected person."""
+        bbox = selected_person.get_bbox()
+        center_x = (bbox.xmin() + bbox.xmax()) / 2.0
+        center_y = (bbox.ymin() + bbox.ymax()) / 2.0
+        return center_x, center_y

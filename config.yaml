@@ -1,0 +1,46 @@
+# AI Bird Deterrent Configuration
+
+# Paths
+paths:
+  resources_dir: "resources"
+  logs_dir: "logs"
+  model:
+    hef_file: "yolov8s_h8l.hef"
+    post_process_so: "libyolo_hailortpp_postprocess.so"
+
+# Camera and Detection Settings
+camera:
+  width: 640
+  height: 640
+  format: "RGB"
+
+detection:
+  nms_score_threshold: 0.3
+  nms_iou_threshold: 0.45
+  person_tracking:
+    max_frames_missing: 10
+
+# Hardware Configuration
+servo:
+  pan:
+    channel: 0
+    center: 70
+    min_angle: -90
+    max_angle: 90
+    threshold: 1.0  # Minimum angle change to trigger movement
+  tilt:
+    channel: 1
+    center: 74
+    min_angle: -90
+    max_angle: 90
+    threshold: 1.0  # Minimum angle change to trigger movement
+  i2c_address: 0x40
+
+laser:
+  gpio_chip: "gpiochip0"
+  pin: 13
+
+# Field of View Settings (in degrees)
+fov:
+  horizontal: 66.0
+  vertical: 41.0
