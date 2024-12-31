@@ -1,121 +1,137 @@
-# AI Bird Deterrent Project
+# AI Bird Deterrent System
 
-This project utilizes the Hailo-8L AI accelerator on a Raspberry Pi 5 to perform person detection and tracking.
+This project implements an AI-powered bird deterrent system using person detection and tracking. The system uses a Hailo ML accelerator for efficient inference, along with servo motors for pan/tilt control and a laser for targeting.
 
-## Hardware Requirements
-
-- Raspberry Pi 5
-- Hailo-8L AI Accelerator
-- Raspberry Pi Camera Module 3
-
-## Directory Structure
+## Project Structure
 
 ```
 ai-bird-deterrent/
-├── basic_pipelines/     # Core detection code
-├── logs/               # Log files
-├── resources/          # AI models and libraries
-├── scripts/           # Setup and utility scripts
-└── README.md
+├── config.yaml           # Main configuration file
+├── logs/                 # Log files directory
+├── resources/           # Model and resource files
+│   ├── yolov8s_h8l.hef
+│   └── libyolo_hailortpp_postprocess.so
+├── scripts/             # Installation and setup scripts
+├── src/                # Source code
+│   ├── config.py       # Configuration management
+│   ├── hailo_detection_app.py  # Main detection application
+│   ├── laser_control.py        # Laser control module
+│   ├── person_tracker.py       # Person tracking logic
+│   └── servo_control.py        # Pan/tilt servo control
+└── tests/              # Test files
 ```
 
-## Initial Setup
+## Requirements
 
-### 1. Environment Setup
+- Raspberry Pi (tested on RPi 4)
+- Hailo-8 or Hailo-8L ML accelerator
+- Pan/tilt servo mechanism
+- Laser module
+- PCA9685 PWM controller for servos
+- Camera module
 
-First, you need to activate the Hailo virtual environment. This is crucial for all operations:
+## Installation
 
+1. Clone the repository:
 ```bash
-source scripts/setup_env.sh
+git clone https://github.com/yourusername/ai-bird-deterrent.git
+cd ai-bird-deterrent
 ```
 
-You should see `(venv_hailo_rpi5_examples)` in your terminal prompt after activation. All subsequent commands must be run with this environment active.
-
-### 2. Installation
-
-Run the installation script to set up dependencies:
-
+2. Run the installation script:
 ```bash
 ./scripts/install.sh
 ```
 
-This script will:
-- Install required Python packages
-- Install system dependencies
-- Download necessary model files
-
-### 3. Download Resources
-
-The installation script should handle this automatically, but if you need to download resources manually:
-
-```bash
-./scripts/download_resources.sh
-```
-
-This downloads:
-- YOLOv8s model for Hailo-8L
-- YOLOv8s pose estimation model
-- Required post-processing libraries
-
-### 4. Post-Processing Setup (If Needed)
-
-The post-processing library is essential for converting raw model output into meaningful detections. If you need to compile it:
-
-```bash
-./scripts/compile_postprocess.sh
-```
-
-Note: This is typically only needed during initial setup or if you modify the post-processing code.
-
-## Running the Application
-
-1. Make sure the environment is activated:
+3. Set up the environment:
 ```bash
 source scripts/setup_env.sh
 ```
 
-2. Run the detection application:
-```bash
-python basic_pipelines/detection.py
+## Configuration
+
+The system is configured through `config.yaml`. Key configuration sections include:
+
+- `paths`: Resource and model file locations
+- `camera`: Camera settings
+- `detection`: Detection and tracking parameters
+- `servo`: Servo motor configuration
+- `laser`: Laser control settings
+- `fov`: Camera field of view settings
+
+Example configuration modifications:
+```yaml
+# Adjust servo sensitivity
+servo:
+  pan:
+    threshold: 2.0  # Larger value = less sensitive
+  tilt:
+    threshold: 2.0
+
+# Modify detection confidence
+detection:
+  nms_score_threshold: 0.4  # Higher = more confident detections
 ```
 
-The application will:
-- Initialize the Raspberry Pi camera
-- Load the YOLOv8s model
-- Start detecting people in real-time
-- Display the video feed with detections
+## Usage
 
-## Models
+1. Ensure all hardware is properly connected
+2. Modify config.yaml as needed
+3. Run the application:
+```bash
+python -m src.main
+```
 
-The project includes these key models:
-- `yolov8s_h8l.hef`: Main detection model
-- `yolov8s_pose_h8l.hef`: Pose estimation model (for future tracking features)
+Optional arguments:
+- `--config`: Specify an alternative configuration file path
+
+## Hardware Setup
+
+### Servo Configuration
+- Pan servo: Connected to PCA9685 channel 0
+- Tilt servo: Connected to PCA9685 channel 1
+- I2C address: 0x40 (configurable)
+
+### Laser Setup
+- Connected to GPIO pin 13 (configurable)
+- Uses gpiod for control
+
+## Development
+
+### Adding New Features
+
+1. Update config.yaml with any new parameters
+2. Implement new functionality in appropriate module
+3. Update main application class as needed
+4. Add tests for new functionality
+
+### Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Submit a pull request
 
 ## Troubleshooting
 
-1. If you see "No such file" errors:
-   - Ensure you've run the download_resources.sh script
-   - Check that all files exist in the resources/ directory
+Common issues and solutions:
 
-2. If you get Hailo-related errors:
-   - Make sure the environment is activated
-   - Verify the Hailo-8L is properly connected
-   - Check the logs/ directory for detailed error messages
+1. Servo Jitter
+   - Adjust servo thresholds in config.yaml
+   - Check power supply stability
 
-3. If the camera isn't working:
-   - Ensure the camera module is properly connected
-   - Check that the camera is enabled in raspi-config
+2. Detection Issues
+   - Adjust nms_score_threshold in config.yaml
+   - Verify camera setup and lighting
 
-## Important Notes
+3. Laser Control
+   - Verify GPIO permissions
+   - Check physical connections
 
-1. Always run scripts from the project root directory
-2. Keep the virtual environment activated during all operations
-3. Check the logs directory for troubleshooting information
-4. The post-processing library compilation (compile_postprocess.sh) is usually only needed once during initial setup
+## License
 
-## Future Features
+[Your License Here]
 
-The project is designed to support:
-- Person tracking with unique IDs
-- Movement analysis
-- Pose estimation
+## Acknowledgments
+
+- Hailo for ML acceleration support
+- [Other acknowledgments]
