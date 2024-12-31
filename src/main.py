@@ -38,6 +38,7 @@ def parse_args():
         default='config.yaml',
         help='Path to configuration file (default: config.yaml)'
     )
+    
     return parser.parse_args()
 
 def setup_signal_handlers(app):
