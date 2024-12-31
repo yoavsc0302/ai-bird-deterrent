@@ -585,3 +585,19 @@ def disable_qos(pipeline):
             # Set the 'qos' property to False
             element.set_property('qos', False)
             print(f"Set qos to False for {element.get_name()}")
+
+
+# ---------------------------------------------------------
+#                       I Added This
+# ---------------------------------------------------------
+
+def TRACKER_PIPELINE(name='hailo_tracker'):
+    """Creates a GStreamer pipeline string for the HailoTracker."""
+    tracker_pipeline = (
+        f'{QUEUE(name=f"{name}_q")} ! '
+        f'hailotracker name={name} '
+        'keep-tracked-frames=30 '     # Keep track for ~1 sec at 30fps
+        'keep-new-frames=15 '         # Half second to confirm new track
+        'keep-lost-frames=5 '        # Half second before considering track lost
+    )
+    return tracker_pipeline

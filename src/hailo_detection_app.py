@@ -17,12 +17,12 @@ from typing import Optional, Tuple
 
 from .config import load_config
 from .servo_control import PanTiltController
-from .person_tracker import PersonTracker
 from .laser_control import LaserController
 from .hailo_rpi_common import (
     GStreamerApp,
     SOURCE_PIPELINE, # Gets frames (video) from Raspberry Pi camera
     INFERENCE_PIPELINE, # Runs MLmodel inference on frames using Hailo
+    TRACKER_PIPELINE, # 
     USER_CALLBACK_PIPELINE, # Where we process the inference results
     DISPLAY_PIPELINE, # Displays the video with bounding boxes
     app_callback_class,
@@ -64,6 +64,9 @@ class PersonDetectionApp(GStreamerApp):
         # 5. Create the GStreamer pipeline
         self.create_pipeline() # uses get_pipeline_string() which we created here below, to create the pipeline
         
+        # 6. Initialize the ID of the person being tracked
+        self.tracked_id = None 
+    
     def _setup_logging(self):
         """Configure logging for the application.
             1. Creates logs directory if it doesn't exist
@@ -94,10 +97,6 @@ class PersonDetectionApp(GStreamerApp):
     def _init_hardware(self):
         try:
             logging.info("Initializing hardware components...")
-            
-            # Initialize person tracker
-            logging.info("Initializing person tracker...")
-            self.tracker = PersonTracker(max_frames_missing=self.config['detection']['person_tracking']['max_frames_missing'])
 
             # Initialize pan/tilt servos
             logging.info("Initializing pan/tilt servos...")
@@ -115,10 +114,8 @@ class PersonDetectionApp(GStreamerApp):
             raise
     
     def _detection_callback(self, pad, info, user_data) -> Gst.PadProbeReturn:
-        """Process detection results and control hardware."""
-        try:
-            
-            """
+        """Process detection results and control hardware.
+        
             info - is a GStreamer probe info object that contains:
             - The current buffer (frame) being processed
             - more information about the buffer
@@ -132,47 +129,46 @@ class PersonDetectionApp(GStreamerApp):
             - And more
             """
 
-            
+        try:    
             # Get buffer (frame) from probe info
             buffer = info.get_buffer()
             if not buffer: 
                 logging.warning("No buffer received in detection callback")
                 return Gst.PadProbeReturn.OK
             
-            # Get all detections (This will include all detected objects, not just people)
-            rois = hailo.get_roi_from_buffer(buffer) # ROI = Region of Interest, is a bounding box around detected object
-            all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION) # Get all detections from the ROI, Hailo detection is a class that represents a detected object
-            
-            # Remove non-person detections from ROIs so they won't be displayed
+            # Get detections
+            rois = hailo.get_roi_from_buffer(buffer)
+            all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
+
+            # Filter for high-confidence person detections and remove others from display
+            person_detections = []
             for det in all_detections:
-                if det.get_label() != "person":
-                    rois.remove_object(det)
-            
-            # Get remaining person detections (after removing non-person detections)
-            person_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
-            
-            # Handle no detections
+                if det.get_label() == "person" and det.get_confidence() >= self.config['detection']['nms_score_threshold']:
+                    tracking_ids = det.get_objects_typed(hailo.HAILO_UNIQUE_ID)
+                    if tracking_ids:
+                        person_detections.append(det)
+                rois.remove_object(det)  # Remove all objects initially
+
+            # If no people detected, turn off laser
             if not person_detections:
                 self.laser.turn_off()
                 return Gst.PadProbeReturn.OK
-            
-            # Update tracker and get selected person
-            selected_person = self.tracker.update(person_detections)
-            if not selected_person:
-                self.laser.turn_off()
-                return Gst.PadProbeReturn.OK
-            
-            # Calculate target position
+
+            # Add back only person detections to ROIs for display
+            for det in person_detections:
+                rois.add_object(det)
+
+            # Get person with lowest tracking ID
+            selected_person = min(person_detections, 
+                                key=lambda x: x.get_objects_typed(hailo.HAILO_UNIQUE_ID)[0].get_id())
+                
+            # Calculate target position, turn on laser, and update pan/tilt
             center_x, center_y = self.target_position(selected_person)
-            
-            # Turn on laser for tracking
             self.laser.turn_on()
-            
-            # Update servo position if needed
             self.pan_tilt.update_if_needed(center_x, center_y)
-            
+
             return Gst.PadProbeReturn.OK
-            
+
         except Exception as e:
             logging.error(f"Error in detection callback: {e}")
             traceback.print_exc()
@@ -189,10 +185,11 @@ class PersonDetectionApp(GStreamerApp):
         
         # Build pipeline
         pipeline = (
-            f"{SOURCE_PIPELINE('rpi')} " # The source of the video (in this case, the Raspberry Pi camera)
-            f"{INFERENCE_PIPELINE(self.config['paths']['model']['hef_path'], self.config['paths']['model']['post_process_path'], batch_size=1, additional_params=inference_params)} ! " # Runs on the frame the ML model inference (in this case, the Hailo model yolov8s_h8l.hef)
-            f"{USER_CALLBACK_PIPELINE()} ! " # Where we process the inference results
-            f"{DISPLAY_PIPELINE(video_sink='xvimagesink', sync='false', show_fps='true')}" # Displays the video with bounding boxes
+            f"{SOURCE_PIPELINE('rpi')} "
+            f"{INFERENCE_PIPELINE(self.config['paths']['model']['hef_path'], self.config['paths']['model']['post_process_path'], batch_size=1, additional_params=inference_params)} ! "
+            f"{TRACKER_PIPELINE()} ! "
+            f"{USER_CALLBACK_PIPELINE()} ! "
+            f"{DISPLAY_PIPELINE(video_sink='xvimagesink', sync='false', show_fps='true')}"
         )
         return pipeline
     
