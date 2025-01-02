@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 import argparse
 
-from .hailo_detection_app import PersonDetectionApp
+from .object_targeting_app import ObjectTargetingApp
 from .config import ConfigurationError
 
 def parse_args():
@@ -82,7 +82,7 @@ def main():
             raise ConfigurationError(f"Configuration file not found: {config_path}")
         
         # Initialize and run the application
-        app = PersonDetectionApp(config_path=str(config_path))
+        app = ObjectTargetingApp(config_path=str(config_path))
         setup_signal_handlers(app)
         
         logging.info("Starting AI Bird Deterrent system...")
