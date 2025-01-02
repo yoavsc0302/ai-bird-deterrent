@@ -1,5 +1,3 @@
-# src/servo_control.py
-
 import time
 from typing import Tuple
 from adafruit_pca9685 import PCA9685

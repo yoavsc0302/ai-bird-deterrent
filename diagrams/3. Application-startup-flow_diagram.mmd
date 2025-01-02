@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Main as main.py
+    participant App as PersonDetectionApp
+    participant Config as ConfigManager
+    participant Hardware as Hardware Controllers
+    participant Pipeline as GStreamer Pipeline
+    
+    Main->>Main: parse_args()
+    Main->>Main: setup_signal_handlers()
+    Main->>App: Initialize PersonDetectionApp
+    
+    App->>Config: load_config()
+    Config-->>App: return validated config
+    
+    App->>App: _setup_logging()
+    App->>App: _create_gstreamer_args()
+    
+    App->>Hardware: _init_hardware()
+    Hardware->>Hardware: Initialize PanTilt
+    Hardware->>Hardware: Initialize Laser
+    
+    App->>Pipeline: create_pipeline()
+    Pipeline->>Pipeline: Build GStreamer pipeline
+    
+    Main->>App: app.run()
+    App->>Pipeline: Start pipeline & event loop

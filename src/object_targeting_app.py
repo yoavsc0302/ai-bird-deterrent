@@ -16,9 +16,9 @@ import traceback
 from typing import Optional, Tuple
 
 from .config import load_config
-from .servo_control import PanTiltController
-from .laser_control import LaserController
-from .hailo_rpi_common import (
+from .pan_tilt_controller import PanTiltController
+from .laser_controller import LaserController
+from .g_streamer_app import (
     GStreamerApp,
     SOURCE_PIPELINE, # Gets frames (video) from Raspberry Pi camera
     INFERENCE_PIPELINE, # Runs MLmodel inference on frames using Hailo
@@ -28,7 +28,7 @@ from .hailo_rpi_common import (
     app_callback_class,
 )
 
-class PersonDetectionApp(GStreamerApp):
+class ObjectTargetingApp(GStreamerApp):
     """
     Main application class for person detection and tracking.
     
