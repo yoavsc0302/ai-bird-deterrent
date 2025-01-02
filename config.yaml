@@ -28,12 +28,16 @@ servo:
     min_angle: -90
     max_angle: 90
     threshold: 1.0  # Minimum angle change to trigger movement
+    scaling_factor: 0.9
+    power_factor: 1.5
   tilt:
     channel: 1
-    center: 74
+    center: 63
     min_angle: -90
     max_angle: 90
-    threshold: 1.0  # Minimum angle change to trigger movement
+    threshold: 0.0  # Minimum angle change to trigger movement
+    scaling_factor: 0.9
+    power_factor: 1.3
   i2c_address: 0x40
 
 laser:
