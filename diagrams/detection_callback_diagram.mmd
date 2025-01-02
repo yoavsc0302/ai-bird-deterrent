@@ -1,0 +1,38 @@
+flowchart TD
+    start[Frame Arrives] --> buffer[Get Frame Buffer]
+    
+    subgraph Detection[Person Detection]
+        buffer --> get_rois[Get ROIs from Buffer]
+        get_rois --> get_detections[Get All Detections]
+    end
+
+    subgraph Filtering[Detection Filtering]
+        get_detections --> check_person{Is Person?}
+        check_person --> |No|remove[Remove from ROIs]
+        check_person --> |Yes|check_conf{High Confidence?}
+        check_conf --> |No|remove
+        check_conf --> |Yes|check_track{Has Tracking ID?}
+        check_track --> |No|remove
+        check_track --> |Yes|keep[Add to person_detections]
+    end
+
+    subgraph Actions[Hardware Control]
+        keep --> any_people{Any People?}
+        any_people --> |No|laser_off[Turn Laser Off]
+        any_people --> |Yes|select[Select Person with Lowest ID]
+        select --> calc_center[Calculate Bounding Box Center]
+        calc_center --> laser_on[Turn Laser On]
+        laser_on --> update_check{Update Needed?}
+        update_check --> |Yes|move_servo[Move Pan/Tilt Servos]
+        update_check --> |No|finish[Return OK]
+    end
+
+    laser_off --> finish
+    move_servo --> finish
+
+    classDef process fill:#f9f,stroke:#333,stroke-width:2px
+    classDef decision fill:#ffd,stroke:#333,stroke-width:2px
+    classDef hardware fill:#ddf,stroke:#333,stroke-width:2px
+    
+    class start,buffer,get_rois,get_detections,remove,keep,calc_center,laser_on,move_servo,laser_off process
+    class check_person,check_conf,check_track,any_people,update_check decision

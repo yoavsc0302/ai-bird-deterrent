@@ -143,25 +143,56 @@ class PanTiltController:
         """
         return (self.current_pan, self.current_tilt)
     
-    def calculate_angles(self, center_x: float, center_y: float) -> Tuple[float, float]:
+    def _apply_nonlinear_transform(self, value: float, power: float) -> float:
         """
-        Calculate servo angles based on detection center coordinates.
+        Apply non-linear power transformation to coordinate values while preserving sign.
+        
+        This transformation improves tracking precision by:
+        - Reducing movement for small deviations (more precise control near center)
+        - Amplifying movement for large deviations (faster response near edges)
         
         Args:
-            center_x (float): Normalized x coordinate (0-1)
-            center_y (float): Normalized y coordinate (0-1)
+            value: Input value in range [-1, 1]
+            power: Power factor for non-linear scaling (>1 reduces small movements)
             
         Returns:
-            Tuple[float, float]: Calculated (pan_angle, tilt_angle)
+            float: Transformed value, maintaining original sign
         """
-        normalized_x = center_x - 0.5 
-        normalized_y = center_y - 0.5 
-        
-        # Calculate angles using configured FOV values
-        pan_angle = -normalized_x * self.fov['horizontal'] # Negative sign to invert direction because of the camera orientation in relation to the servos
-        tilt_angle = normalized_y * self.fov['vertical'] # Positive sign because the tilt servo moves in the same direction as the camera
-        
-        return pan_angle, tilt_angle
+        import math
+        return math.copysign(math.pow(abs(value), power), value)
+    
+    def calculate_angles(self, center_x: float, center_y: float) -> Tuple[float, float]:
+            """
+            Calculate servo angles based on detection center coordinates using tangent-based calculation
+            with aggressive scaling for more responsive movement. Different scaling for pan and tilt.
+            
+            Args:
+                center_x (float): Normalized x coordinate (0-1)
+                center_y (float): Normalized y coordinate (0-1)
+                
+            Returns:
+                Tuple[float, float]: Calculated (pan_angle, tilt_angle)
+            """
+            import math
+            
+            # Normalize coordinates to [-1, 1]
+            x_deviation = (center_x - 0.5) * 2  
+            y_deviation = (center_y - 0.5) * 2
+            
+            # Apply non-linear transformations to improve tracking precision and responsiveness
+            x_deviation = self._apply_nonlinear_transform(x_deviation, self.pan_config.get('power_factor', 1.5))
+            y_deviation = self._apply_nonlinear_transform(y_deviation, self.tilt_config.get('power_factor', 1.3))
+
+            # Get scaling factors from config
+            pan_scaling = self.pan_config.get('scaling_factor', 0.9) # Scaling factor for pan is for fine tuning the pan movement
+            tilt_scaling = self.tilt_config.get('scaling_factor', 0.9) # Scaling factor for tilt is for fine tuning the tilt movement
+            
+            # Calculate final angles with scaling (multiplied by fov is to map the deviation to the actual angle, fov is the field of view of the camera)
+            pan_angle = -x_deviation * self.fov['horizontal'] * pan_scaling # Negative sign for pan is because the servo is oriented in the opposite direction as the camera
+            tilt_angle = y_deviation * self.fov['vertical'] * tilt_scaling # Positive sign for tilt is because the servo is oriented in the same direction as the camera
+            
+            return pan_angle, tilt_angle
+
     
     def should_update(self, pan_angle: float, tilt_angle: float) -> bool:
         """

@@ -140,27 +140,23 @@ class PersonDetectionApp(GStreamerApp):
             rois = hailo.get_roi_from_buffer(buffer)
             all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
 
-            # Filter for high-confidence person detections and remove others from display
+            # Filter for high-confidence person detections and remove non-person detections from ROIs
             person_detections = []
             for det in all_detections:
                 if det.get_label() == "person" and det.get_confidence() >= self.config['detection']['nms_score_threshold']:
                     tracking_ids = det.get_objects_typed(hailo.HAILO_UNIQUE_ID)
                     if tracking_ids:
                         person_detections.append(det)
-                rois.remove_object(det)  # Remove all objects initially
+                else:
+                    rois.remove_object(det)  # Remove all objects initially
 
             # If no people detected, turn off laser
             if not person_detections:
                 self.laser.turn_off()
                 return Gst.PadProbeReturn.OK
 
-            # Add back only person detections to ROIs for display
-            for det in person_detections:
-                rois.add_object(det)
-
             # Get person with lowest tracking ID
-            selected_person = min(person_detections, 
-                                key=lambda x: x.get_objects_typed(hailo.HAILO_UNIQUE_ID)[0].get_id())
+            selected_person = min(person_detections, key=lambda x: x.get_objects_typed(hailo.HAILO_UNIQUE_ID)[0].get_id())
                 
             # Calculate target position, turn on laser, and update pan/tilt
             center_x, center_y = self.target_position(selected_person)
