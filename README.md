@@ -32,6 +32,24 @@
    - [Error Handling](#error-handling)
    - [Shutdown Process](#shutdown-process)
 
+6. [Video Processing Pipeline](#6-video-processing-pipeline)
+   - [Overview](#overview-1)
+   - [Our Custom Pipeline Structure](#our-custom-pipeline-structure)
+     - [Pipeline Elements Flow](#pipeline-elements-flow)
+     - [Source Pipeline](#1-source_pipeline)
+     - [Inference Pipeline](#2-inference_pipeline)
+     - [Tracker Pipeline](#3-tracker_pipeline)
+     - [User Callback Pipeline](#4-user_callback_pipeline)
+     - [Display Pipeline](#5-display_pipeline)
+   - [Custom Pipeline Implementation](#custom-pipeline-implementation)
+
+7. [Frame Processing and Detection](#7-frame-processing-and-detection)
+    - [Overview](#overview-2)
+    - [Callback Processing Flow](#callback-processing-flow)
+    - [Implementation Details](#implementation-details)
+    - [Key Components](#key-components)
+    - [Error Handling](#error-handling-1)
+
 ---
 
 # 1. Introduction
@@ -64,7 +82,6 @@ A technique for controlling power or signals by rapidly switching them on and of
 
 ## Components Overview
 
-how can i do it?
 | Component Name | Function | Image |
 |----------------|-----------|--------|
 | Raspberry Pi 5 | A single-board computer that can run a full operating system. Features GPIO pins for hardware interfacing, supporting various communication protocols like I2C, SPI, and UART. | ![Raspberry Pi 5](media/raspberry_pi_5.JPG) |
@@ -79,6 +96,7 @@ how can i do it?
 ## Connection Diagrams
 
 ### Logical Connection Diagram
+
 ```mermaid
 graph LR
     subgraph Main Computer
@@ -204,6 +222,7 @@ Same as Servo Motor 1
 # 3. Software Overview
 
 ## System Architecture
+
 ```mermaid
 flowchart TD
     subgraph Hardware
@@ -274,6 +293,7 @@ flowchart TD
 - Dependencies between components 
 - Key methods and fields for each class/module
 - Access modifiers (`-` private, `+` public, `#` protected)
+
 ```mermaid
 classDiagram
     class GStreamerApp {
@@ -395,6 +415,7 @@ classDiagram
 - Raises clear errors if configuration is invalid
 
 ## Directory Structure
+
 ```
 src/
 ├── __init__.py              # Package initialization
@@ -414,6 +435,7 @@ src/
 The application follows a structured startup sequence that ensures proper initialization of all components. The process begins with `main.py`, which serves as the entry point, and progresses through configuration loading, hardware initialization, and pipeline setup.
 
 ## Startup Sequence Diagram
+
 ```mermaid
 sequenceDiagram
     participant Main
@@ -536,3 +558,302 @@ When shutdown is triggered (via signal or error):
    - GPIO resources released
 3. Logging is finalized
 4. Process exits cleanly
+
+
+# 6. Video Processing Pipeline
+
+## Overview
+The video processing pipeline is built on GStreamer, a powerful framework for constructing multimedia processing pipelines. Our system uses a two-layer approach:
+1. Base GStreamer framework (provided by Hailo)
+2. Our custom pipeline implementation
+
+```mermaid
+flowchart TB
+    subgraph "Base GStreamer Framework"
+        direction TB
+        GF[GStreamerApp]
+        GF --> |Provides| BP[Base Pipeline Management]
+        GF --> |Provides| EM[Event Management]
+        GF --> |Provides| RM[Resource Management]
+    end
+
+    subgraph "Our Custom Implementation"
+        direction TB
+        OT[ObjectTargetingApp]
+        OT --> |Implements| CP[Custom Pipeline]
+        OT --> |Implements| CB[Detection Callback]
+        OT --> |Manages| HW[Hardware Control]
+    end
+
+    GF --> |Inherited by| OT
+```
+
+## Our Custom Pipeline Structure
+
+### Pipeline Elements Flow
+Our pipeline consists of five main stages, each transforming the data in specific ways:
+
+```mermaid
+flowchart TB
+    subgraph SP [SOURCE_PIPELINE]
+        direction LR
+        A[RPi Camera] -->|Raw Frame| B[Format Conversion] -->|RGB Frame| C[Queue]
+    end
+    
+    SP -->|Frame| IP
+    
+    subgraph IP [INFERENCE_PIPELINE]
+        direction LR
+        D[Scale/Convert] -->|ML Input Format| E[Hailo ML] -->|Raw Detections| F[Post Process] -->|Structured Detections| G[Queue]
+    end
+    
+    IP -->|Detections| TP
+    
+    subgraph TP [TRACKER_PIPELINE]
+        direction LR
+        T1[Track Manager] -->|Update Tracks| T2[ID Assignment] -->|Tracked Objects| T3[Queue]
+    end
+    
+    TP -->|Tracked Objects| UP
+    
+    subgraph UP [USER_CALLBACK_PIPELINE]
+        direction LR
+        H["Our Callback
+        (Chooses target, controls laser
+        and pan/tilt servos)"] -->|Processed Results| I[Queue]
+    end
+    
+    UP -->|Frame + Results| DP
+    
+    subgraph DP [DISPLAY_PIPELINE]
+        direction LR
+        J[Draw Boxes] -->|Annotated Frame| K[Display]
+    end
+```
+
+### 1. SOURCE_PIPELINE
+- **Purpose**: Captures video from Raspberry Pi camera
+- **Key Features**:
+  - Configures camera format (e.g., RGB, YUV)
+  - Sets resolution (e.g., 640x640, 1920x1080)
+  - Manages frame rate
+- **Configuration Example**:
+```python
+source_element = (
+    # Initialize camera with specified format and resolution
+    f'libcamerasrc name={name} ! '
+    f'video/x-raw, format={video_format}, width={width}, height={height}'
+)
+```
+
+### 2. INFERENCE_PIPELINE
+- **Purpose**: Runs YOLOv8s model on Hailo-8L
+- **Key Features**:
+  - Hardware-accelerated inference
+  - Configurable detection thresholds
+  - Outputs detection metadata
+- **Configuration Example**:
+```python
+inference_params = (
+    # NMS Score Threshold: Only detections with confidence above this threshold are kept
+    f"nms-score-threshold={config['detection']['nms_score_threshold']} "
+    
+    # NMS IOU Threshold: Controls overlap allowed between detection boxes
+    f"nms-iou-threshold={config['detection']['nms_iou_threshold']} "
+    
+    # Output format specification for post-processing
+    "output-format-type=HAILO_FORMAT_TYPE_FLOAT32"
+)
+```
+
+### 3. TRACKER_PIPELINE
+- **Purpose**: Maintains object persistence across frames
+- **Key Features**:
+  - Assigns unique IDs to detected people
+  - Tracks objects across frames
+  - Manages track lifecycle
+- **Configuration Example**:
+```python
+tracker_pipeline = (
+    'hailotracker '
+    # These parameters are commonly used values in computer vision tracking tasks
+    'keep-tracked-frames=30 '  # Duration to maintain active tracks
+    'keep-new-frames=15 '      # Frames needed to confirm new track
+    'keep-lost-frames=5'       # Frames before removing lost track
+)
+```
+
+### 4. USER_CALLBACK_PIPELINE
+- **Purpose**: Processes detection results
+- **Key Features**:
+  - Filters person detections
+  - Calculates targeting coordinates
+  - Controls hardware based on detections
+
+Note: The detailed implementation of our detection callback will be discussed thoroughly later on.
+
+- **Configuration Example**:
+```python
+def _detection_callback(self, pad, info, user_data):
+    """Process detection results and control hardware."""
+    .
+    .        (OUR IMPLEMENTATION)
+    .
+    return Gst.PadProbeReturn.OK
+```
+
+### 5. DISPLAY_PIPELINE
+- **Purpose**: Provides visual feedback
+- **Key Features**:
+  - Shows detection boxes
+  - Displays tracking IDs
+  - Shows FPS counter
+- **Configuration Example**:
+```python
+display_pipeline = (
+    # Add detection visualization overlays
+    f'hailooverlay name={name}_hailooverlay ! '
+    # Configure display settings and performance metrics
+    f'fpsdisplaysink name={name} sync={sync} text-overlay={show_fps}'
+)
+```
+
+## Custom Pipeline Implementation
+Our `ObjectTargetingApp` extends the base GStreamer framework through:
+
+1. **Pipeline Configuration**
+```python
+def get_pipeline_string(self) -> str:
+    """Creates our custom GStreamer pipeline string."""
+    pipeline = (
+        f"{SOURCE_PIPELINE('rpi')} "
+        f"{INFERENCE_PIPELINE(self.config['paths']['model']['hef_path'])} "
+        f"{TRACKER_PIPELINE()} "
+        f"{USER_CALLBACK_PIPELINE()} "
+        f"{DISPLAY_PIPELINE()}"
+    )
+    return pipeline
+```
+
+# 7. Frame Processing and Detection
+
+## Overview
+The detection callback is the core processing unit of our application, called for each frame in our video pipeline. It bridges between ML detections and hardware control, implementing the logic that turns video frames into targeting actions.
+
+## Callback Processing Flow
+```mermaid
+flowchart TD
+    A[Start Callback] --> B[Get Buffer from Info]
+    B --> C{Buffer Valid?}
+    C -->|No| D[Log Warning]
+    D --> E[Return OK]
+    
+    C -->|Yes| F[Get ROIs from Buffer]
+    F --> G[Get All Detections]
+
+    G --> H[Initialize Empty person_detections List]
+    H --> I[For Each Detection]
+    I --> J{Is Person AND 
+    Confidence ≥ threshold?}
+    J -->|No| K[Remove from ROIs]
+    J -->|Yes| L{Has Tracking ID?}
+    L -->|No| K
+    L -->|Yes| M[Add to person_detections]
+
+    M --> N{More Detections?}
+    N -->|Yes| I
+    N -->|No| O{person_detections Empty?}
+    
+    O -->|Yes| P[Turn Off Laser]
+    P --> E
+
+    O -->|No| Q[Select Person with Lowest Tracking ID]
+    Q --> R[Calculate Target Position]
+    R --> S[Turn On Laser]
+    S --> T[Update Pan/Tilt if Needed]
+    T --> E
+
+    Z[Exception] --> Y[Log Error]
+    Y --> E
+```
+
+## Implementation Details
+
+### Detection Processing
+```python
+def _detection_callback(self, pad, info, user_data):
+    try:    
+        # 1. Get buffer (frame) from probe info
+        buffer = info.get_buffer()
+        if not buffer: 
+            logging.warning("No buffer received")
+            return Gst.PadProbeReturn.OK
+        
+        # 2. Get detections from buffer
+        rois = hailo.get_roi_from_buffer(buffer)
+        all_detections = rois.get_objects_typed(hailo.HAILO_DETECTION)
+
+        # 3. Filter for person detections
+        person_detections = []
+        for det in all_detections:
+            if det.get_label() == "person" and \
+               det.get_confidence() >= self.config['detection']['nms_score_threshold']:
+                tracking_ids = det.get_objects_typed(hailo.HAILO_UNIQUE_ID)
+                if tracking_ids:
+                    person_detections.append(det)
+            else:
+                rois.remove_object(det)
+
+        # 4. Handle no detections case
+        if not person_detections:
+            self.laser.turn_off()
+            return Gst.PadProbeReturn.OK
+
+        # 5. Select and target person
+        selected_person = min(person_detections, 
+                            key=lambda x: x.get_objects_typed(hailo.HAILO_UNIQUE_ID)[0].get_id())
+        
+        # 6. Update hardware
+        center_x, center_y = self.target_position(selected_person)
+        self.laser.turn_on()
+        self.pan_tilt.update_if_needed(center_x, center_y)
+
+        return Gst.PadProbeReturn.OK
+
+    except Exception as e:
+        logging.error(f"Error in detection callback: {e}")
+        return Gst.PadProbeReturn.OK
+```
+
+## Key Components
+
+### 1. Detection Retrieval
+- Gets the current frame buffer from GStreamer pipeline
+- Extracts Regions of Interest (ROIs) containing detections
+- Retrieves all objects detected by the ML model
+
+### 2. Person Filtering
+The callback implements specific filtering criteria:
+- Object class must be "person"
+- Detection confidence must exceed threshold
+- Object must have a valid tracking ID
+
+### 3. Target Selection Strategy
+When multiple people are detected, the system:
+- Selects the person with the lowest tracking ID
+- This effectively targets the person who was first detected
+- Maintains consistent targeting rather than switching between people
+
+### 4. Position Calculation
+For the selected target:
+- Calculates center point of bounding box
+- Converts to normalized coordinates (0-1 range)
+- These coordinates are used for servo control
+
+## Error Handling
+The callback implements comprehensive error handling:
+- Validates buffer existence
+- Ensures ROIs are properly extracted
+- Gracefully handles cases with no detections
+- Logs errors for debugging
+- Never crashes the pipeline (always returns OK)
