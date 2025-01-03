@@ -64,15 +64,16 @@ A technique for controlling power or signals by rapidly switching them on and of
 
 ## Components Overview
 
+how can i do it?
 | Component Name | Function | Image |
 |----------------|-----------|--------|
-| Raspberry Pi 5 | A single-board computer that can run a full operating system. Features GPIO pins for hardware interfacing, supporting various communication protocols like I2C, SPI, and UART. | <img src="media/raspberry_pi_5.JPG" alt="Raspberry Pi 5" width="25%"> |
-| Raspberry Pi Camera Module 3 | A high-resolution camera module specifically designed for Raspberry Pi. Connects via CSI (Camera Serial Interface) and supports various video formats and resolutions. | <img src="media/camera_module_3.JPG" alt="Camera Module" width="25%"> |
-| KY-008 Laser Module | A semiconductor laser diode module that can emit a focused beam of light. Can be controlled through digital signals for on/off functionality or PWM for variable intensity. | <img src="media/laser_ky008.JPG" alt="Laser Module" width="25%"> |
-| MG996R Servo Motor (x2) | Digital servo motors used for precise positioning and movement control. | <img src="media/mg996r_servo.JPG" alt="Servo Motor" width="25%"> |
-| PCA9685 | A 16-channel PWM/Servo driver that communicates via I2C. Used to control multiple servos or other PWM devices while only using two pins on the main controller. | <img src="media/pca9685.JPG" alt="PCA9685" width="25%"> |
-| Hailo 8L AI Chip | An edge AI processor designed for deep learning applications. Accelerates neural network operations and can be integrated with main processors through PCIe interface. | <img src="media/hailo8l.JPG" alt="Hailo Chip" width="25%"> |
-| 4x AA Battery Pack | A power supply unit that holds 4 AA batteries in series, providing portable DC power. Used to power motors and other high-current devices. | <img src="media/4xaa_battery_pack.JPG" alt="Battery Pack" width="25%"> |
+| Raspberry Pi 5 | A single-board computer that can run a full operating system. Features GPIO pins for hardware interfacing, supporting various communication protocols like I2C, SPI, and UART. | ![Raspberry Pi 5](media/raspberry_pi_5.JPG) |
+| Raspberry Pi Camera Module 3 | A high-resolution camera module specifically designed for Raspberry Pi. Connects via CSI (Camera Serial Interface) and supports various video formats and resolutions. | ![Camera Module](media/camera_module_3.JPG) |
+| KY-008 Laser Module | A semiconductor laser diode module that can emit a focused beam of light. Can be controlled through digital signals for on/off functionality or PWM for variable intensity. | ![Laser Module](media/laser_ky008.JPG) |
+| MG996R Servo Motor (x2) | Digital servo motors used for precise positioning and movement control. | ![Servo Motor](media/mg996r_servo.JPG) |
+| PCA9685 | A 16-channel PWM/Servo driver that communicates via I2C. Used to control multiple servos or other PWM devices while only using two pins on the main controller. | ![PCA9685](media/pca9685.JPG) |
+| Hailo 8L AI Chip | An edge AI processor designed for deep learning applications. Accelerates neural network operations and can be integrated with main processors through PCIe interface. | ![Hailo Chip](media/hailo8l.JPG) |
+| 4x AA Battery Pack | A power supply unit that holds 4 AA batteries in series, providing portable DC power. Used to power motors and other high-current devices. | ![Battery Pack](media/4xaa_battery_pack.JPG) |
 
 
 ## Connection Diagrams
@@ -203,7 +204,7 @@ Same as Servo Motor 1
 # 3. Software Overview
 
 ## System Architecture
-::: mermaid
+```mermaid
 flowchart TD
     subgraph Hardware
         cam[Camera Module 3]
@@ -236,7 +237,7 @@ flowchart TD
     hailo --> inference
     servo_ctrl --> servos
     laser_ctrl --> laser
-:::
+```
 
 ## Core Components
 
@@ -273,7 +274,7 @@ flowchart TD
 - Dependencies between components 
 - Key methods and fields for each class/module
 - Access modifiers (`-` private, `+` public, `#` protected)
-::: mermaid
+```mermaid
 classDiagram
     class GStreamerApp {
         <<Given Framework>>
@@ -336,7 +337,7 @@ classDiagram
     ObjectTargetingApp --> PanTiltController : uses
     ObjectTargetingApp --> config-module : uses
     Main --> ObjectTargetingApp : creates
-:::
+```
 
 ## Core Framework
 ### `GStreamerApp` (`g_streamer_app.py`)
@@ -413,7 +414,7 @@ src/
 The application follows a structured startup sequence that ensures proper initialization of all components. The process begins with `main.py`, which serves as the entry point, and progresses through configuration loading, hardware initialization, and pipeline setup.
 
 ## Startup Sequence Diagram
-::: mermaid
+```mermaid
 sequenceDiagram
     participant Main
     participant OTA as ObjectTargetingApp
@@ -447,7 +448,7 @@ sequenceDiagram
     OTA->>GSA: Start pipeline & event loop
     
     Note right of GSA: Pipeline calls _detection_callback<br/>for each frame, where we process<br/>any detections found
-:::
+```
 
 ## Startup Sequence Details
 
