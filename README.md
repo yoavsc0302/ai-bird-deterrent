@@ -51,6 +51,16 @@
     - [Key Components](#key-components)
     - [Error Handling](#error-handling-1)
 
+8. [Targeting System and Motion Control](#8-targeting-system-and-motion-control)
+    - [Overview](#overview-3)
+    - [Coordinate Processing Pipeline](#coordinate-processing-pipeline)
+    - [Transformation Chain](#transformation-chain)
+        - [Coordinate Normalization](#coordinate-normalization)
+        - [Non-linear Transform](#non-linear-transform)
+        - [Field of View Mapping](#field-of-view-mapping)
+        - [Scaling Factor](#scaling-factor)
+        - [Hardware Adaptation](#hardware-adaptation)
+
 ---
 
 # 1. Introduction
@@ -222,6 +232,11 @@ Same as Servo Motor 1
 * **PCIe**: Provides high-speed data transfer between the Raspberry Pi and AI accelerator
 
 ### Raspberry Pi 5 → Camera Module 3
+
+| Raspberry Pi 5 | Camera Module 3 |
+|---------------|----------------|
+| CAM1 (CSI connector) | CSI ribbon cable port |
+
 
 # 3. Software Overview
 
@@ -861,3 +876,147 @@ The callback implements comprehensive error handling:
 - Gracefully handles cases with no detections
 - Logs errors for debugging
 - Never crashes the pipeline (always returns OK)
+
+# 8. Targeting System and Motion Control
+
+## Overview
+The targeting system converts detected person coordinates from the video frame into precise servo movements that aim our laser at the target. This involves a series of carefully designed coordinate transformations that account for both geometric effects and real-world hardware considerations.
+
+## Coordinate Processing Pipeline
+```mermaid
+flowchart TB
+    A[Frame Coordinates<br/>0 to 1] --> B[Normalized Coordinates<br/>-1 to 1]
+    B --> C[Non-linear Transform<br/>Geometric Compensation]
+    C --> D[FOV Mapping<br/>Camera to World]
+    D --> E[Scaling<br/>Fine-tuning]
+    E --> F[Hardware Adaptation<br/>Servo Control]
+```
+
+## Transformation Chain
+
+### Coordinate Normalization
+Before any processing begins, we convert the frame coordinates (which range from 0 to 1) into a center-relative coordinate system (-1 to 1):
+```python
+# Convert from frame coordinates to center-relative
+x_deviation = (center_x - 0.5) * 2  # Range: -1 (left) to +1 (right)
+y_deviation = (center_y - 0.5) * 2  # Range: -1 (bottom) to +1 (top)
+```
+
+### Non-linear Transform
+
+#### The Challenge
+When tracking targets across a camera's field of view, we face an inherent targeting precision problem that stems from the geometric relationship between angular movement and physical distance:
+
+1. Near the center of the frame (small deviations):
+   - Due to basic trigonometry, a 1° servo movement translates to a larger physical distance when pointing straight ahead
+   - For example: At 3 meters distance, a 1° movement shifts our aim by ~5.2 cm at the center
+   - This makes precise targeting difficult because even small angular adjustments create large movements
+
+2. At the edges of the frame (large deviations):
+   - The same 1° movement translates to a smaller physical distance due to the angular relationship
+   - At the same 3m distance but at 45° from center, a 1° movement only shifts our aim by ~3.7 cm
+   - This creates sluggish response when tracking targets at the edges
+
+#### The Solution
+To compensate for this geometric effect, we apply a non-linear power transformation to our normalized coordinates:
+```python
+def _apply_nonlinear_transform(self, value: float, power: float) -> float:
+    """
+    Apply non-linear power transformation while preserving sign.
+    Args:
+        value: Input value in range [-1, 1]
+        power: Power factor for non-linear scaling (>1 reduces small movements)
+    """
+    return math.copysign(math.pow(abs(value), power), value)
+```
+
+Through empirical testing combined with geometric understanding, we found that:
+- A power of 1.5 for pan (horizontal) movement provides optimal balance
+- A slightly lower power of 1.3 for tilt (vertical) movement works better since vertical movements tend to be smaller
+
+### Field of View Mapping
+
+#### Overview
+After the non-linear transform, we convert our normalized values into actual servo angles using the camera's field of view specifications.
+
+#### The Concept
+The system uses the Camera Module 3's field of view specifications:
+- Horizontal FOV: 66.0°
+- Vertical FOV: 41.0°
+
+This means that:
+- A target at the right edge of the frame is 33° right of center
+- A target at the left edge of the frame is 33° left of center
+- A target at the top edge is 20.5° above center
+- A target at the bottom edge is 20.5° below center
+
+#### Implementation
+```python
+# Calculate final angles with FOV mapping
+pan_angle = -x_deviation * self.fov['horizontal']  
+tilt_angle = y_deviation * self.fov['vertical']
+```
+
+The negative sign for pan_angle ensures correct directional movement:
+- Negative deviation (target on left) → Positive servo angle
+- Positive deviation (target on right) → Negative servo angle
+
+### Scaling Factor
+
+#### Overview
+The final mathematical transformation applies a scaling factor to our FOV-mapped angles, providing fine-tuning capabilities for real-world operation.
+
+#### Implementation
+```python
+# Apply scaling to final angles
+pan_angle = -x_deviation * self.fov['horizontal'] * pan_scaling  
+tilt_angle = y_deviation * self.fov['vertical'] * tilt_scaling
+```
+
+#### Purpose and Benefits
+1. Mechanical Compensation
+   - Real-world servo installations may not perfectly align with the camera's optical axis
+   - Small mounting imperfections can affect targeting accuracy
+   - The scaling factor (0.9) helps compensate for these mechanical variances
+   - Acts as a calibration tool to match servo movement with camera view
+
+2. Fine-Tuning Capability
+   - The scaling factor can be adjusted in configuration to:
+     - Match different servo models
+     - Compensate for different mounting configurations
+     - Adjust for varying target distances
+   - Provides a simple way to tune system behavior without modifying code
+
+Through empirical testing, we found that a scaling factor of 0.9 for both pan and tilt movements provides optimal performance in our setup.
+
+#### Configuration
+The scaling factors are configurable in our YAML configuration:
+```yaml
+servo:
+  pan:
+    scaling_factor: 0.9
+  tilt:
+    scaling_factor: 0.9
+```
+
+### Hardware Adaptation
+The final step converts our calculated angles into actual servo commands:
+```python
+def move(self, pan_angle: float, tilt_angle: float):
+    # Constrain angles to safe physical limits
+    pan_angle = self._constrain_angle(pan_angle, self.pan_limits)
+    tilt_angle = self._constrain_angle(tilt_angle, self.tilt_limits)
+    
+    # Add angles to calibrated centers
+    servo_pan_angle = self.pan_center + pan_angle
+    servo_tilt_angle = self.tilt_center + tilt_angle
+    
+    # Move servos
+    self.pan_servo.angle = servo_pan_angle
+    self.tilt_servo.angle = servo_tilt_angle
+```
+
+This final adaptation:
+1. Constrains angles to prevent cable damage
+2. Converts relative angles to absolute servo positions
+3. Sends the final commands to the hardware
