@@ -3,7 +3,8 @@
 ## Table of Contents
 1. [Introduction](#1-introduction)
    - [Purpose](#purpose)
-   - [System Demo](#system-demo)
+   - [System Overview Video](#system-overview-video)
+   - [System Demo Video](#system-demo-video)
    - [Key Features](#key-features)
 
 2. [Hardware](#2-hardware)
@@ -57,8 +58,11 @@
 ## Purpose
 This is a person-tracking system that uses AI to detect people in a video feed and automatically aims a laser at them by controlling a pan/tilt servo mechanism. The system leverages the Hailo-8L AI accelerator for efficient ML processing and provides precise targeting through servo-controlled movement.
 
-## System Demo
-[Video Placeholder: demonstration video showing the system in action]
+## System Overview Video
+https://github.com/user-attachments/assets/8b0ea3dc-ae83-4507-ad42-1374c002b7a2
+
+## System Demo Video
+https://github.com/user-attachments/assets/80e773d1-d014-44c5-bc59-44efadda6c1e
 
 ## Key Features
 - Real-time person detection using YOLOv8 model
