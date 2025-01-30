@@ -65,8 +65,12 @@
 
 # 1. Introduction
 
-## Purpose
-This is a person-tracking system that uses AI to detect people in a video feed and automatically aims a laser at them by controlling a pan/tilt servo mechanism. The system leverages the Hailo-8L AI accelerator for efficient ML processing and provides precise targeting through servo-controlled movement.
+## Purpose  
+This system is designed to **prevent birds from eating food intended for cows** by using AI to detect birds and automatically aim a laser at them, deterring them without harm.  
+
+It is a **bird-tracking system** that processes a **video feed in real time**, detects birds using AI, and **automatically directs a laser** at them via a **pan/tilt servo mechanism**. The system leverages the **Hailo-8L AI accelerator** for efficient machine learning processing and ensures **precise targeting through servo-controlled movement**. The **YOLOv8s model** is used for real-time object detection, providing fast and accurate identification of birds in the video feed.  
+
+For **testing purposes**, the system currently **tracks people instead of birds**. Since testing on birds in a controlled environment is difficult—requiring an outdoor setup and waiting for birds to enter the frame—we have adapted the system to track people instead. This allows for a **more controlled and reliable evaluation**. However, the system can be easily reconfigured to track birds in its intended deployment.
 
 ## System Overview Video
 https://github.com/user-attachments/assets/8b0ea3dc-ae83-4507-ad42-1374c002b7a2
