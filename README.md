@@ -1024,3 +1024,7 @@ This final adaptation:
 1. Constrains angles to prevent cable damage
 2. Converts relative angles to absolute servo positions
 3. Sends the final commands to the hardware
+
+## License  
+© 2024–2025 Yoav Schwammenthal and Nave Blander. All rights reserved.  
+This project and its source code may not be copied, modified, or distributed without explicit permission.
